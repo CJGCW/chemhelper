@@ -1,4 +1,4 @@
-module github.com/cjwood032/chemhelper
+module element
 
 go 1.21.3
 
