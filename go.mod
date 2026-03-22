@@ -1,4 +1,4 @@
-module element
+module chemhelper
 
 go 1.21.3
 

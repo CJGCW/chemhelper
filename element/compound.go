@@ -5,10 +5,12 @@ import (
 	"sort"
 	"strconv"
 
+	"chemhelper/units"
+
 	"github.com/shopspring/decimal"
 )
 
-type ElementMoles struct { // when creating compounds. I could just have moles be part of the element struct, but this is less confusing when balancing equations.
+type ElementMoles struct {
 	Element Element
 	Moles   decimal.Decimal
 }
@@ -16,29 +18,28 @@ type ElementMoles struct { // when creating compounds. I could just have moles b
 type Compound struct {
 	Symbol    string
 	Elements  []ElementMoles
-	Mass      Mass
-	Volume    Volume
+	Mass      units.Mass
+	Volume    units.Volume
 	MolarMass decimal.Decimal
 	Moles     decimal.Decimal
 }
 
-// Orders by symbol
+// sortElementMoles orders a slice of ElementMoles by element symbol.
 func sortElementMoles(elements []ElementMoles) {
 	sort.Slice(elements, func(i, j int) bool {
 		return elements[i].Element.Symbol < elements[j].Element.Symbol
 	})
 }
 
-// parseFragment recursively parses a compound fragment, returning a map of
-// element symbol -> count. It handles nested parentheses such as Ca(OH)2 or
-// Fe2(SO4)3.
+// parseFragment recursively parses a compound formula fragment, returning a
+// map of element symbol -> atom count. Handles nested parentheses such as
+// Ca(OH)2 or Fe2(SO4)3.
 func parseFragment(s string, pt *PeriodicTable) (map[string]int64, error) {
 	counts := make(map[string]int64)
 	i := 0
 	for i < len(s) {
 		switch {
 		case s[i] == '(':
-			// Find the matching closing paren
 			depth := 1
 			j := i + 1
 			for j < len(s) && depth > 0 {
@@ -53,9 +54,7 @@ func parseFragment(s string, pt *PeriodicTable) (map[string]int64, error) {
 			if depth != 0 {
 				return nil, fmt.Errorf("unmatched '(' in compound")
 			}
-			// j now points one past the ')'
 			inner := s[i+1 : j-1]
-			// Read optional multiplier after ')'
 			k := j
 			for k < len(s) && s[k] >= '0' && s[k] <= '9' {
 				k++
@@ -78,7 +77,6 @@ func parseFragment(s string, pt *PeriodicTable) (map[string]int64, error) {
 			i = k
 
 		case s[i] >= 'A' && s[i] <= 'Z':
-			// Read element symbol: one uppercase + optional lowercase
 			j := i + 1
 			for j < len(s) && s[j] >= 'a' && s[j] <= 'z' {
 				j++
@@ -87,7 +85,6 @@ func parseFragment(s string, pt *PeriodicTable) (map[string]int64, error) {
 			if _, found := pt.FindElementBySymbol(symbol); !found {
 				return nil, fmt.Errorf("element %s not found in the periodic table", symbol)
 			}
-			// Read optional count
 			k := j
 			for k < len(s) && s[k] >= '0' && s[k] <= '9' {
 				k++
@@ -120,7 +117,7 @@ func ParseCompoundElements(compound string, pt *PeriodicTable) ([]ElementMoles, 
 	}
 	elements := make([]ElementMoles, 0, len(counts))
 	for symbol, count := range counts {
-		element, _ := pt.FindElementBySymbol(symbol) // existence already verified in parseFragment
+		element, _ := pt.FindElementBySymbol(symbol)
 		elements = append(elements, ElementMoles{
 			Element: *element,
 			Moles:   decimal.NewFromInt(count),

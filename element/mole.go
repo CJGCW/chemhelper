@@ -3,59 +3,43 @@ package element
 import (
 	"fmt"
 
+	"chemhelper/units"
+
 	"github.com/shopspring/decimal"
 )
 
-func getMoles(p Property, value decimal.Decimal) (decimal.Decimal, error){
-	return p.getMoles(value)
-}
-
-func (m Mass) getMoles(molarMass decimal.Decimal) (decimal.Decimal, error) {
-	if molarMass.Equal(decimal.Zero){
-		return decimal.Zero, fmt.Errorf("no molar mass passed")
-	}
-	standardMass, err := m.convertToStandard()
-	if err != nil {
-		return decimal.Zero, err
-	}
-	return standardMass.Div(molarMass), nil
-}
-
-func (c *Compound) getMoles(mass decimal.Decimal) ( error) {
+func (c *Compound) getMoles(mass decimal.Decimal) error {
 	if mass.Equal(decimal.Zero) {
 		return fmt.Errorf("no mass passed")
 	}
 	if c.MolarMass.Equal(decimal.Zero) {
-		err := c.getMolarMass()
-		if (err != nil) {
+		if err := c.getMolarMass(); err != nil {
 			return err
-		}	
+		}
 	}
 	c.Moles = mass.Div(c.MolarMass)
 	return nil
 }
 
-func (element *ElementMoles) getMoles(mass Mass) error {
-	
-	moles, err := mass.getMoles(element.Element.AtomicWeight)
+func (element *ElementMoles) getMoles(mass units.Mass) error {
+	moles, err := mass.GetMoles(element.Element.AtomicWeight)
 	if err != nil {
 		return err
-	} 
+	}
 	element.Moles = moles
 	return nil
 }
 
-func (compound *Compound) getMolesFromMass(mass Mass) error {
+func (compound *Compound) getMolesFromMass(mass units.Mass) error {
 	if compound.MolarMass.Equal(decimal.Zero) {
-		err := compound.getMolarMass()
-		if (err != nil) {
+		if err := compound.getMolarMass(); err != nil {
 			return err
-		}	
+		}
 	}
-	moles, err := mass.getMoles(compound.MolarMass)
-	if (err != nil) {
+	moles, err := mass.GetMoles(compound.MolarMass)
+	if err != nil {
 		return err
-	}	
+	}
 	compound.Moles = moles
 	return nil
 }
