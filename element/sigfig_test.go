@@ -1,6 +1,10 @@
 package element
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/shopspring/decimal"
+)
 
 func TestSigFigs(t *testing.T) {
 	var testMasses = []struct {
@@ -103,52 +107,52 @@ func TestLowestSigFigs(t *testing.T){
 func TestSetToSigFigs(t *testing.T){
 	var tests = []struct {
 		name string
-		value float64
+		value decimal.Decimal
 		sigfigs int32
-		expectedResult float64
+		expectedResult decimal.Decimal
 		expectedError bool
 
 	}{
 		{
 			name: "general rounding",
-			value: 123.45,
+			value: decimal.NewFromFloat(123.45),
 			sigfigs: 3,
-			expectedResult: 123,
+			expectedResult: decimal.NewFromFloat(123),
 			expectedError: false,
 		},
 		{
 			name: "Round to make even, rounding down",
-			value: 123.45,
+			value: decimal.NewFromFloat(123.45),
 			sigfigs: 4,
-			expectedResult: 123.4, // round to make even
+			expectedResult: decimal.NewFromFloat(123.4),
 			expectedError: false,
 		},
 		{
 			name: "Round to make even, rounding up",
-			value: 123.35,
+			value: decimal.NewFromFloat(123.35),
 			sigfigs: 4,
-			expectedResult: 123.4,
+			expectedResult: decimal.NewFromFloat(123.4),
 			expectedError: false,
 		},
 		{
 			name: "Rounding ints",
-			value: 12345,
+			value: decimal.NewFromFloat(12345),
 			sigfigs: 2,
-			expectedResult: 12000,
+			expectedResult: decimal.NewFromFloat(12000),
 			expectedError: false,
 		},
 		{
 			name: "Significant zeros",
-			value: 10.02,
+			value: decimal.NewFromFloat(10.02),
 			sigfigs: 3,
-			expectedResult: 10.0,
+			expectedResult: decimal.NewFromFloat(10.0),
 			expectedError: false,
 		},
 		{
 			name: "Less precision than desired sig figs",
-			value: 10.0213,
+			value: decimal.NewFromFloat(10.0213),
 			sigfigs: 30,
-			expectedResult: 10.0213,
+			expectedResult: decimal.NewFromFloat(10.0213),
 			expectedError: false,
 		},
 	}
@@ -160,7 +164,7 @@ func TestSetToSigFigs(t *testing.T){
 		if test.expectedError && err == nil{
 			t.Errorf("Expected error for %v but got none", test.name)
 		}
-		if !test.expectedError && result != test.expectedResult {
+		if !test.expectedError && !result.Equal(test.expectedResult) {
 			t.Errorf("Test %s failed: expected %v, got %v", test.name, test.expectedResult, result)
 		}
 	}

@@ -5,9 +5,10 @@ import (
 	"slices"
 )
 
-var metalloids = []int{5,14,32,33,51,52,84,85}
-var chalcogens = []int{8,16,34}
-var halogens = []int{9,17,35,53}
+var metalloids = []int{5, 14, 32, 85}          // B, Si, Ge, At
+var chalcogens = []int{8, 16, 34, 52, 84}      // O, S, Se, Te, Po
+var halogens = []int{9, 17, 35, 53}            // F, Cl, Br, I
+var pnictogens = []int{7, 15, 33, 51, 83}      // N, P, As, Sb, Bi
 type Group int
 const (
     Alkali Group = iota +1
@@ -28,7 +29,7 @@ func (e Element) GetGroup() (string, error) {
         return "None", nil
     case (e.AtomicNumber==6):
         return "Carbon", nil
-    case (e.AtomicNumber==7 || e.AtomicNumber==15):
+    case slices.Contains(pnictogens, e.AtomicNumber):
         return "Pnictogens", nil
     case slices.Contains(chalcogens,e.AtomicNumber) :
         return "Chalcogens", nil

@@ -9,16 +9,14 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func SetToSigFigs(val float64, sigfig int32) (float64, error) {
-	num := decimal.NewFromFloat(val)
+func SetToSigFigs(val decimal.Decimal, sigfig int32) (decimal.Decimal, error) {
 	if sigfig < 1 {
-		return 0, errors.New("significant figures must be greater than 0")
+		return decimal.Zero, errors.New("significant figures must be greater than 0")
 	}
-	digits := num.NumDigits()
-	scale := num.Exponent()
-	d := int32(sigfig) - (int32(digits) + scale) // scale is negative
-	rounded:=num.RoundBank(d)
-	return rounded.InexactFloat64(), nil
+	digits := val.NumDigits()
+	scale := val.Exponent()
+	d := int32(sigfig) - (int32(digits) + scale)
+	return val.RoundBank(d), nil
 }
 
 //will need to be a string, Go doesn't handle floats as we want, i.e. 10.0 is treated as 10

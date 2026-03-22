@@ -118,7 +118,7 @@ func TestConvertVolume(t *testing.T) {
 	}
 	for _, test := range volumeTests {
 		t.Run(test.name, func(t *testing.T) {
-			v := Volume{value: decimal.NewFromFloat(test.value), unit: test.prefix}
+			v := Volume{value: decimal.NewFromFloat(test.value), unit: liter, prefix: test.prefix}
 			result, err := convertToStandardValue(v)
 			if !test.expectedError && err !=nil  {
 				t.Errorf("Unexpected error for %s: %s", test.name, err)

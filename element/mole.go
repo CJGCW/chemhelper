@@ -35,18 +35,6 @@ func (c *Compound) getMoles(mass decimal.Decimal) ( error) {
 	return nil
 }
 
-func (v Volume) getMoles(molarity decimal.Decimal) (decimal.Decimal, error) {
-	zed := decimal.NewFromInt(0)
-	if molarity.LessThanOrEqual(zed) {
-		return zed, fmt.Errorf("molarity must be a nonzero, positive value, got %v ",molarity)
-	}
-	standardVol, err := v.convertToStandard()
-	if err != nil {
-		return zed, err
-	}
-	return standardVol.Mul(molarity), err
-}
-
 func (element *ElementMoles) getMoles(mass Mass) error {
 	
 	moles, err := mass.getMoles(element.Element.AtomicWeight)

@@ -14,7 +14,21 @@ type Element struct {
 }
 
 type PeriodicTable struct {
-	Elements []Element
+	Elements    []Element
+	symbolIndex map[string]*Element
+}
+
+// newPeriodicTableFromElements builds a PeriodicTable and its symbol index
+// from a slice of elements. Used by both NewPeriodicTable and test constructors.
+func newPeriodicTableFromElements(elements []Element) *PeriodicTable {
+	pt := &PeriodicTable{
+		Elements:    elements,
+		symbolIndex: make(map[string]*Element, len(elements)),
+	}
+	for i := range pt.Elements {
+		pt.symbolIndex[pt.Elements[i].Symbol] = &pt.Elements[i]
+	}
+	return pt
 }
 
 func NewPeriodicTable() *PeriodicTable {
@@ -138,16 +152,12 @@ func NewPeriodicTable() *PeriodicTable {
 		{117, "Ts", "Tennessine", decimal.NewFromFloat(294), 1.6, 350.0, 17, 7},
 		{118, "Og", "Oganesson", decimal.NewFromFloat(294), 2.0, 360.0, 18, 7},
     }
-    return &PeriodicTable{Elements:elements}
+    return newPeriodicTableFromElements(elements)
 }
 
 func (pt *PeriodicTable) FindElementBySymbol(symbol string) (*Element, bool) {
-	for _, elem := range pt.Elements {
-		if elem.Symbol == symbol {
-			return &elem, true
-		}
-	}
-	return nil, false //if the passed symbol isn't in the correct format it won't be found 
+	elem, found := pt.symbolIndex[symbol]
+	return elem, found
 }
 
 
