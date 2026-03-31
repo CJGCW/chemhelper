@@ -106,6 +106,130 @@ func TestElementGroups(t *testing.T) {
 		
 	}
 }
+func TestIsTransitionMetal(t *testing.T) {
+	cases := []struct {
+		symbol string
+		want   bool
+	}{
+		{"Sc", true},  // group 3, lower boundary
+		{"Fe", true},  // group 8, mid-range
+		{"Zn", true},  // group 12, upper boundary
+		{"Ca", false}, // group 2, alkaline earth
+		{"Al", false}, // group 13, post-transition
+		{"O", false},  // group 16, nonmetal
+		{"Ag", true},  // group 11
+		{"Cu", true},  // group 11
+	}
+	pt := NewPeriodicTable()
+	for _, c := range cases {
+		elem, found := pt.FindElementBySymbol(c.symbol)
+		if !found {
+			t.Fatalf("element %s not found in periodic table", c.symbol)
+		}
+		if got := elem.IsTransitionMetal(); got != c.want {
+			t.Errorf("IsTransitionMetal(%s) = %v, want %v", c.symbol, got, c.want)
+		}
+	}
+}
+
+func TestIsMetal(t *testing.T) {
+	cases := []struct {
+		symbol string
+		want   bool
+	}{
+		{"H", false},  // group 1 by convention but is a nonmetal
+		{"Na", true},  // group 1, alkali metal
+		{"Ca", true},  // group 2, alkaline earth
+		{"Fe", true},  // group 8, transition metal
+		{"Al", true},  // group 13, post-transition (explicit)
+		{"Ga", true},  // group 13, post-transition (explicit)
+		{"In", true},  // group 13, post-transition (explicit)
+		{"Tl", true},  // group 13, post-transition (explicit)
+		{"Sn", true},  // group 14, post-transition (explicit)
+		{"Pb", true},  // group 14, post-transition (explicit)
+		{"Bi", true},  // group 15, post-transition (explicit)
+		{"C", false},  // group 14, nonmetal
+		{"O", false},  // group 16, nonmetal
+		{"Cl", false}, // group 17, halogen
+		{"He", false}, // group 18, noble gas
+		{"Si", false}, // group 14, metalloid
+		{"As", false}, // group 15, metalloid
+	}
+	pt := NewPeriodicTable()
+	for _, c := range cases {
+		elem, found := pt.FindElementBySymbol(c.symbol)
+		if !found {
+			t.Fatalf("element %s not found in periodic table", c.symbol)
+		}
+		if got := elem.IsMetal(); got != c.want {
+			t.Errorf("IsMetal(%s) = %v, want %v", c.symbol, got, c.want)
+		}
+	}
+}
+
+func TestMonatomicIonCharge(t *testing.T) {
+	cases := []struct {
+		symbol string
+		want   int
+	}{
+		{"N", -3},  // group 15
+		{"P", -3},  // group 15
+		{"O", -2},  // group 16
+		{"S", -2},  // group 16
+		{"F", -1},  // group 17
+		{"Cl", -1}, // group 17
+		{"Br", -1}, // group 17
+		{"Na", 0},  // group 1, metal returns 0
+		{"Ca", 0},  // group 2, metal returns 0
+		{"Fe", 0},  // transition metal returns 0
+		{"C", 0},   // group 14, returns 0
+		{"He", 0},  // noble gas returns 0
+	}
+	pt := NewPeriodicTable()
+	for _, c := range cases {
+		elem, found := pt.FindElementBySymbol(c.symbol)
+		if !found {
+			t.Fatalf("element %s not found in periodic table", c.symbol)
+		}
+		if got := elem.MonatomicIonCharge(); got != c.want {
+			t.Errorf("MonatomicIonCharge(%s) = %d, want %d", c.symbol, got, c.want)
+		}
+	}
+}
+
+func TestValence(t *testing.T) {
+	cases := []struct {
+		symbol string
+		want   int
+	}{
+		{"H", 1},  // group 1
+		{"Li", 1}, // group 1
+		{"Ca", 2}, // group 2
+		{"Mg", 2}, // group 2
+		{"Fe", 8}, // group 8, TM: returns group number
+		{"Cu", 11}, // group 11, TM
+		{"Zn", 12}, // group 12, TM
+		{"Al", 3}, // group 13
+		{"C", 4},  // group 14
+		{"N", 5},  // group 15
+		{"O", 6},  // group 16
+		{"Cl", 7}, // group 17
+		{"He", 2}, // group 18, special case Z=2
+		{"Ne", 8}, // group 18
+		{"Ar", 8}, // group 18
+	}
+	pt := NewPeriodicTable()
+	for _, c := range cases {
+		elem, found := pt.FindElementBySymbol(c.symbol)
+		if !found {
+			t.Fatalf("element %s not found in periodic table", c.symbol)
+		}
+		if got := elem.Valence(); got != c.want {
+			t.Errorf("Valence(%s) = %d, want %d", c.symbol, got, c.want)
+		}
+	}
+}
+
 func newTestElement(number int, symbol string, name string, weight float64, en float64, radius float64, group int, period int, ) Element{
 	return Element{AtomicNumber: number, Symbol: symbol, Name: name, AtomicWeight: decimal.NewFromFloat(weight), Electronegativity: en, VanDerWaalsRadius: radius, Group: group, Period: period}
 }

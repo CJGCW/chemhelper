@@ -3,14 +3,84 @@ package element
 import "github.com/shopspring/decimal"
 
 type Element struct {
-	AtomicNumber    int     // Atomic number of the element
-	Symbol          string  // Symbol of the element (e.g., "H", "O", "He")
-	Name            string  // Full name of the element (e.g., "Hydrogen", "Oxygen")
-	AtomicWeight    decimal.Decimal // Atomic weight (usually a floating point number)
-	Electronegativity float64 // Electronegativity (Pauling scale)
-	VanDerWaalsRadius float64 // Van der Waals radius (in picometers, pm)
-	Group           int     // The group number(Column) in the periodic table (1-18)
-	Period          int     // The period number(Row) in the periodic table (1-7)
+	AtomicNumber      int             // Atomic number of the element
+	Symbol            string          // Symbol of the element (e.g., "H", "O", "He")
+	Name              string          // Full name of the element (e.g., "Hydrogen", "Oxygen")
+	AtomicWeight      decimal.Decimal // Atomic weight (usually a floating point number)
+	Electronegativity float64         // Electronegativity (Pauling scale)
+	VanDerWaalsRadius float64         // Van der Waals radius (in picometers, pm)
+	Group             int             // The group number(Column) in the periodic table (1-18)
+	Period            int             // The period number(Row) in the periodic table (1-7)
+}
+
+// Valence returns the number of valence electrons for the element.
+// For main-group elements this is exact; for transition metals (groups 3-12) it
+// approximates as the group number (sufficient for the ionic Lewis structure model).
+func (e *Element) Valence() int {
+	return valenceFromGroup(e.Group, e.AtomicNumber)
+}
+
+// IsTM reports whether the element is a transition metal (groups 3-12).
+func (e *Element) IsTransitionMetal() bool {
+	return e.Group >= 3 && e.Group <= 12
+}
+
+// IsMetal reports whether the element is a metal.
+// Hydrogen is excluded: it occupies group 1 by convention but is a nonmetal.
+func (e *Element) IsMetal() bool {
+	if e.Symbol == "H" {
+		return false
+	}
+	if e.Group == 1 || e.Group == 2 || e.IsTransitionMetal() {
+		return true
+	}
+	switch e.Symbol {
+	case "Al", "Ga", "In", "Tl", "Sn", "Pb", "Bi":
+		return true
+	}
+	return false
+}
+
+// MonatomicIonCharge returns the typical ionic charge for a monatomic ion,
+// derived directly from the element's group. Returns 0 for metals and noble gases.
+func (e *Element) MonatomicIonCharge() int {
+	switch e.Group {
+	case 15:
+		return -3
+	case 16:
+		return -2
+	case 17:
+		return -1
+	}
+	return 0
+}
+
+// valenceFromGroup computes valence electrons from group and atomic number.
+func valenceFromGroup(group, atomicNumber int) int {
+	switch {
+	case group == 1:
+		return 1
+	case group == 2:
+		return 2
+	case group >= 3 && group <= 12:
+		return group
+	case group == 13:
+		return 3
+	case group == 14:
+		return 4
+	case group == 15:
+		return 5
+	case group == 16:
+		return 6
+	case group == 17:
+		return 7
+	case group == 18:
+		if atomicNumber == 2 {
+			return 2
+		}
+		return 8
+	}
+	return 0
 }
 
 type PeriodicTable struct {
@@ -32,8 +102,8 @@ func newPeriodicTableFromElements(elements []Element) *PeriodicTable {
 }
 
 func NewPeriodicTable() *PeriodicTable {
-    elements := []Element{
-        {1, "H", "Hydrogen", decimal.NewFromFloat(1.008), 2.20, 120.0, 1, 1},
+	elements := []Element{
+		{1, "H", "Hydrogen", decimal.NewFromFloat(1.008), 2.20, 120.0, 1, 1},
 		{2, "He", "Helium", decimal.NewFromFloat(4.002602), 0.0, 140.0, 18, 1},
 		{3, "Li", "Lithium", decimal.NewFromFloat(6.94), 0.98, 182.0, 1, 2},
 		{4, "Be", "Beryllium", decimal.NewFromFloat(9.0122), 1.57, 153.0, 2, 2},
@@ -151,13 +221,11 @@ func NewPeriodicTable() *PeriodicTable {
 		{116, "Lv", "Livermorium", decimal.NewFromFloat(293), 1.6, 345.0, 16, 7},
 		{117, "Ts", "Tennessine", decimal.NewFromFloat(294), 1.6, 350.0, 17, 7},
 		{118, "Og", "Oganesson", decimal.NewFromFloat(294), 2.0, 360.0, 18, 7},
-    }
-    return newPeriodicTableFromElements(elements)
+	}
+	return newPeriodicTableFromElements(elements)
 }
 
 func (pt *PeriodicTable) FindElementBySymbol(symbol string) (*Element, bool) {
 	elem, found := pt.symbolIndex[symbol]
 	return elem, found
 }
-
-

@@ -92,6 +92,23 @@ func TestResolve_InvalidSMILES(t *testing.T) {
 	}
 }
 
+func TestResolve_EmptySMILES(t *testing.T) {
+	_, err := smiles.Resolve("")
+	if err == nil {
+		t.Error("expected error for empty SMILES but got none")
+	}
+}
+
+func TestResolve_IUPACName(t *testing.T) {
+	p, err := smiles.Resolve("O") // water
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.IUPACName == "" {
+		t.Error("expected non-empty IUPAC name for water")
+	}
+}
+
 func TestResolveToMolarMass(t *testing.T) {
 	mw, err := smiles.ResolveToMolarMass("O") // water
 	if err != nil {

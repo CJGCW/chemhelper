@@ -42,6 +42,11 @@ func NewRouter() http.Handler {
 			r.Post("/molality-from-bpe", HandleMolalityFromBPE)
 			r.Post("/molality-from-fpd", HandleMolalityFromFPD)
 		})
+
+		// Structure & Bonding
+		r.Route("/structure", func(r chi.Router) {
+			r.Post("/lewis", HandleLewis)
+		})
 	})
 
 	return r

@@ -26,6 +26,37 @@ func newMass(val float64, opts ...interface{}) units.Mass {
 	return m
 }
 
+func TestValidate_NegativeInputs(t *testing.T) {
+	t.Run("FindMolarity negative moles", func(t *testing.T) {
+		f := FindMolarity{Moles: decimal.NewFromFloat(-1), Volume: newVol(1)}
+		if err := f.Validate(); err == nil {
+			t.Error("expected error for negative moles")
+		}
+	})
+	t.Run("FindMolality negative moles", func(t *testing.T) {
+		f := FindMolality{Moles: decimal.NewFromFloat(-0.5), SolventMass: newMass(1000)}
+		if err := f.Validate(); err == nil {
+			t.Error("expected error for negative moles")
+		}
+	})
+	t.Run("FindMolarityFromMass negative molar mass", func(t *testing.T) {
+		f := FindMolarityFromMass{Mass: newMass(10), MolarMass: decimal.NewFromFloat(-58), Volume: newVol(1)}
+		if err := f.Validate(); err == nil {
+			t.Error("expected error for negative molar mass")
+		}
+	})
+	t.Run("DilutionFindFinalVolume equal concentrations", func(t *testing.T) {
+		d := DilutionFindFinalVolume{
+			InitialConcentration: decimal.NewFromFloat(1),
+			InitialVolume:        newVol(1),
+			FinalConcentration:   decimal.NewFromFloat(1),
+		}
+		if err := d.Validate(); err == nil {
+			t.Error("expected error when final concentration equals initial")
+		}
+	})
+}
+
 func TestFindMolarity(t *testing.T) {
 	tests := []struct {
 		name          string
