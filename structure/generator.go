@@ -155,6 +155,13 @@ func generate(input string) (*LewisStructure, error) {
 		return nil, err
 	}
 
+	return generateFromParsed(formula, charge)
+}
+
+// generateFromParsed runs the Lewis structure pipeline with a pre-parsed formula
+// and charge. Used when the charge is provided explicitly by the caller, bypassing
+// the extractCharge suffix parser.
+func generateFromParsed(formula string, charge int) (*LewisStructure, error) {
 	atoms, err := parseFlat(formula)
 	if err != nil {
 		return nil, err
@@ -304,6 +311,61 @@ func solveSingleCenter(
 			lp[id] = need
 			remaining -= 2 * need
 		}
+	}
+
+	// If remaining is negative, some terminal heavy atoms have more lone-pair demand than
+	// available electrons. Fix this by rerouting C–H bonds: the H bonds to the heavy
+	// terminal instead of the center, replacing one lone pair with a bond and freeing 2e.
+	// This handles molecules like methanol (CH3OH) where O bonds to both C and H.
+	for remaining < 0 {
+		// Find a non-H terminal bonded to center that still has lone pairs to donate.
+		donorID := ""
+		for _, b := range bonds {
+			var cand string
+			if b.From == centralID {
+				cand = b.To
+			} else if b.To == centralID {
+				cand = b.From
+			} else {
+				continue
+			}
+			if symbolOf(cand) != "H" && lp[cand] > 0 {
+				donorID = cand
+				break
+			}
+		}
+		if donorID == "" {
+			break
+		}
+
+		// Find a center–H bond to reroute.
+		rerouteIdx := -1
+		for idx, b := range bonds {
+			if b.From == centralID && symbolOf(b.To) == "H" {
+				rerouteIdx = idx
+				break
+			}
+			if b.To == centralID && symbolOf(b.From) == "H" {
+				rerouteIdx = idx
+				break
+			}
+		}
+		if rerouteIdx == -1 {
+			break
+		}
+
+		hID := bonds[rerouteIdx].To
+		if hID == centralID {
+			hID = bonds[rerouteIdx].From
+		}
+
+		// Swap the bond: center–H becomes donorHeavy–H.
+		bonds = append(bonds[:rerouteIdx], bonds[rerouteIdx+1:]...)
+		bonds = append(bonds, LewisBond{From: donorID, To: hID, Order: 1})
+
+		// Donor loses one lone pair; those 2 electrons are now in a bond.
+		lp[donorID]--
+		remaining += 2
 	}
 
 	if remaining < 0 {

@@ -16,8 +16,9 @@ func NewRouter() http.Handler {
 	r.Use(corsMiddleware)
 
 	r.Route("/api", func(r chi.Router) {
-		// Compound (SMILES resolution)
+		// Compound
 		r.Post("/compound/resolve", HandleCompoundResolve)
+		r.Post("/compound/lookup", HandleCompoundLookup)
 
 		// Elements
 		r.Get("/elements", HandleElements)

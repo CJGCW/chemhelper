@@ -46,6 +46,14 @@ func LookupLewis(input string) (*LewisStructure, bool) {
 // LookupLewisWithError is like LookupLewis but returns the underlying error
 // so the HTTP handler can report a meaningful message to the client.
 func LookupLewisWithError(input string) (*LewisStructure, error) {
-
 	return generate(input)
+}
+
+// LookupLewisWithCharge generates a Lewis structure for the given molecular
+// formula and an explicit integer charge, bypassing the charge-suffix parser.
+// The formula must be a bare formula with no trailing +/- notation.
+// Parenthesised formulas (e.g. "Ca(OH)2") are not supported here; use
+// LookupLewisWithError for those.
+func LookupLewisWithCharge(formula string, charge int) (*LewisStructure, error) {
+	return generateFromParsed(formula, charge)
 }

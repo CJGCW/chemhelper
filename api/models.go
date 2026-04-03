@@ -121,6 +121,18 @@ type CompoundResponse struct {
 	IUPACName        string `json:"iupac_name"`
 }
 
+// CompoundLookupResponse is returned by POST /api/compound/lookup.
+type CompoundLookupResponse struct {
+	CID              int    `json:"cid"`
+	MolecularFormula string `json:"molecular_formula"`
+	MolecularWeight  string `json:"molecular_weight"`
+	IUPACName        string `json:"iupac_name"`
+	SMILES           string `json:"smiles"`
+	InChI            string `json:"inchi"`
+	InChIKey         string `json:"inchi_key"`
+	InputType        string `json:"input_type"`
+}
+
 // ElementResponse is the JSON representation of a periodic table element.
 type ElementResponse struct {
 	AtomicNumber      int     `json:"atomic_number"`

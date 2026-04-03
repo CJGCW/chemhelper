@@ -400,6 +400,52 @@ func TestLewis_Errors(t *testing.T) {
 	}
 }
 
+// ── LookupLewisWithError — chain-topology molecules ───────────────────────────
+
+// CH3OH (methanol) previously failed with "insufficient valence electrons"
+// because the single-center solver assumed all H atoms bond to the central
+// carbon, leaving oxygen unable to satisfy valence. The H-rerouting fix
+// redistributes H atoms to terminal heavy atoms with available lone pairs.
+func TestLewis_Methanol(t *testing.T) {
+	ls, err := LookupLewisWithError("CH3OH")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ls.Atoms) == 0 {
+		t.Fatal("expected atoms in structure")
+	}
+	// Total valence electrons: C(4) + 4×H(1) + O(6) = 14
+	if ls.TotalValenceElectrons != 14 {
+		t.Errorf("total VE: got %d, want 14", ls.TotalValenceElectrons)
+	}
+	// There should be a C–O bond
+	coBond := false
+	for _, b := range ls.Bonds {
+		if (b.From == "C1" && b.To == "O1") || (b.From == "O1" && b.To == "C1") {
+			coBond = true
+		}
+	}
+	if !coBond {
+		t.Error("expected a C–O bond in methanol")
+	}
+	// All formal charges should be zero
+	for _, a := range ls.Atoms {
+		if a.FormalCharge != 0 {
+			t.Errorf("atom %s has non-zero formal charge %d", a.ID, a.FormalCharge)
+		}
+	}
+}
+
+func TestLewis_Ethanol(t *testing.T) {
+	ls, err := LookupLewisWithError("C2H5OH")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ls.TotalValenceElectrons != 20 {
+		t.Errorf("total VE: got %d, want 20", ls.TotalValenceElectrons)
+	}
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // findAtom returns the first atom in ls with the given element symbol, or nil.

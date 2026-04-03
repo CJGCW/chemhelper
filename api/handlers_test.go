@@ -598,4 +598,158 @@ func TestHandleLewis(t *testing.T) {
 		resp := postJSON(t, srv.URL+"/api/structure/lewis", `not json`)
 		assertStatus(t, resp, http.StatusBadRequest)
 	})
+
+	// CH3OH (methanol) previously failed with "insufficient valence electrons"
+	// due to a chain-topology bug in the single-center solver.
+	t.Run("CH3OH returns valid structure", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/structure/lewis", `{"input":"CH3OH"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r lewisResp
+		decodeJSON(t, resp, &r)
+		if len(r.Atoms) == 0 {
+			t.Error("expected atoms in response")
+		}
+		if len(r.Bonds) == 0 {
+			t.Error("expected bonds in response")
+		}
+	})
+
+	t.Run("ionic charge is accepted", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/structure/lewis", `{"input":"NO3","charge":-1}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r lewisResp
+		decodeJSON(t, resp, &r)
+		if r.Geometry == "" {
+			t.Error("expected geometry in response")
+		}
+	})
+}
+
+// ── Compound lookup handler ───────────────────────────────────────────────────
+// These tests make real PubChem network calls.
+// Run with: go test ./api/... -v -run TestHandleCompoundLookup -timeout 60s
+
+type compoundLookupResp struct {
+	CID              int    `json:"cid"`
+	MolecularFormula string `json:"molecular_formula"`
+	MolecularWeight  string `json:"molecular_weight"`
+	IUPACName        string `json:"iupac_name"`
+	SMILES           string `json:"smiles"`
+	InChI            string `json:"inchi"`
+	InChIKey         string `json:"inchi_key"`
+	InputType        string `json:"input_type"`
+}
+
+func TestHandleCompoundLookup(t *testing.T) {
+	srv := newServer(t)
+
+	t.Run("lookup by name returns all fields", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup", `{"input":"water"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r compoundLookupResp
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "H2O" {
+			t.Errorf("formula: got %q, want H2O", r.MolecularFormula)
+		}
+		if r.SMILES == "" {
+			t.Error("SMILES should not be empty")
+		}
+		if r.InChI == "" {
+			t.Error("InChI should not be empty")
+		}
+		if r.InChIKey == "" {
+			t.Error("InChIKey should not be empty")
+		}
+		if r.CID == 0 {
+			t.Error("CID should not be zero")
+		}
+		if r.InputType != "name" {
+			t.Errorf("input_type: got %q, want name", r.InputType)
+		}
+	})
+
+	t.Run("lookup ethanol by plain SMILES detects smiles type", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup", `{"input":"CCO"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r compoundLookupResp
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "C2H6O" {
+			t.Errorf("formula: got %q, want C2H6O", r.MolecularFormula)
+		}
+		if r.CID != 702 {
+			t.Errorf("CID: got %d, want 702 (ethanol)", r.CID)
+		}
+		if r.InputType != "smiles" {
+			t.Errorf("input_type: got %q, want smiles", r.InputType)
+		}
+	})
+
+	t.Run("lookup by CID returns correct compound", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup", `{"input":"5234"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r compoundLookupResp
+		decodeJSON(t, resp, &r)
+
+		if r.CID != 5234 {
+			t.Errorf("CID: got %d, want 5234", r.CID)
+		}
+		if r.InputType != "cid" {
+			t.Errorf("input_type: got %q, want cid", r.InputType)
+		}
+	})
+
+	t.Run("lookup by InChIKey resolves correctly", func(t *testing.T) {
+		// InChIKey for ethanol
+		resp := postJSON(t, srv.URL+"/api/compound/lookup",
+			`{"input":"LFQSCWFLJHTTHZ-UHFFFAOYSA-N"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r compoundLookupResp
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "C2H6O" {
+			t.Errorf("formula: got %q, want C2H6O", r.MolecularFormula)
+		}
+		if r.InputType != "inchikey" {
+			t.Errorf("input_type: got %q, want inchikey", r.InputType)
+		}
+	})
+
+	t.Run("lookup by SMILES with special chars", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup", `{"input":"CC(=O)O"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r compoundLookupResp
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "C2H4O2" {
+			t.Errorf("formula: got %q, want C2H4O2 (acetic acid)", r.MolecularFormula)
+		}
+		if r.InputType != "smiles" {
+			t.Errorf("input_type: got %q, want smiles", r.InputType)
+		}
+	})
+
+	t.Run("empty input returns 400", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup", `{"input":""}`)
+		assertStatus(t, resp, http.StatusBadRequest)
+	})
+
+	t.Run("unknown compound returns 422", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup",
+			`{"input":"xyzzy_not_a_compound_123456789"}`)
+		assertStatus(t, resp, http.StatusUnprocessableEntity)
+	})
+
+	t.Run("malformed JSON returns 400", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/lookup", `not json`)
+		assertStatus(t, resp, http.StatusBadRequest)
+	})
 }
