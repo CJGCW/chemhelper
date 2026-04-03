@@ -501,12 +501,11 @@ func solveTwoCenter(
 	for _, t := range terminals {
 		totalT += t.Count
 	}
-	if totalT%2 != 0 {
-		return nil, fmt.Errorf(
-			"asymmetric two-center chain (%d terminals cannot split evenly between 2 %s atoms)",
-			totalT, center.Symbol)
-	}
-	perCenter := totalT / 2
+	// C1 gets the first ceil(totalT/2) terminals; C2 gets the remainder.
+	// Using ceil lets odd-count molecules (e.g. ethanol: 7 terminals) assign one
+	// extra terminal to C1 rather than rejecting the formula outright. The
+	// H-rerouting pass below corrects any impossible bond topology afterward.
+	firstCenter := (totalT + 1) / 2
 
 	c1ID, c2ID := center.Symbol+"1", center.Symbol+"2"
 	allAtoms := []LewisAtom{
@@ -522,7 +521,7 @@ func solveTwoCenter(
 			gi++
 			tid := fmt.Sprintf("%s%d", t.Symbol, i)
 			cid := c1ID
-			if gi > perCenter {
+			if gi > firstCenter {
 				cid = c2ID
 			}
 			allAtoms = append(allAtoms, LewisAtom{ID: tid, Element: t.Symbol})
@@ -560,6 +559,47 @@ func solveTwoCenter(
 		}
 		lp[a.id] = need
 		remaining -= 2 * need
+	}
+	// H-rerouting for two-center: if remaining is negative after assigning terminal LPs,
+	// some heavy terminals have more lone-pair demand than available electrons. Reroute
+	// center–H bonds so H bonds directly to a heavy terminal instead of the center,
+	// freeing 2e per reroute. This handles asymmetric chains like CH3COOH where both O
+	// atoms end up on the same center in the naive even-split.
+	for remaining < 0 {
+		found := false
+		for idx, b := range bonds {
+			// Identify a center–H bond.
+			var cid, hid string
+			if (b.From == c1ID || b.From == c2ID) && symbolOf(b.To) == "H" {
+				cid, hid = b.From, b.To
+			} else if (b.To == c1ID || b.To == c2ID) && symbolOf(b.From) == "H" {
+				cid, hid = b.To, b.From
+			} else {
+				continue
+			}
+			// Find a non-H terminal assigned to the same center with a lone pair to donate.
+			for _, a := range assigns {
+				if a.cid != cid || a.sym == "H" || lp[a.id] == 0 {
+					continue
+				}
+				// Reroute: remove center–H bond, add terminal–H bond.
+				bonds = append(bonds[:idx], bonds[idx+1:]...)
+				bonds = append(bonds, LewisBond{From: a.id, To: hid, Order: 1})
+				if idx < ccIdx {
+					ccIdx--
+				}
+				lp[a.id]--
+				remaining += 2
+				found = true
+				break
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			break
+		}
 	}
 	if remaining < 0 {
 		return nil, fmt.Errorf("insufficient valence electrons")

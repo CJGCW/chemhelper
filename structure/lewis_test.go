@@ -446,6 +446,34 @@ func TestLewis_Ethanol(t *testing.T) {
 	}
 }
 
+func TestLewis_AceticAcid(t *testing.T) {
+	ls, err := LookupLewisWithError("CH3COOH")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// CH3COOH: C×2, H×4, O×2 → 2×4 + 4×1 + 2×6 = 24 VE
+	if ls.TotalValenceElectrons != 24 {
+		t.Errorf("total VE: got %d, want 24", ls.TotalValenceElectrons)
+	}
+	// All formal charges should be zero
+	for _, a := range ls.Atoms {
+		if a.FormalCharge != 0 {
+			t.Errorf("atom %s has non-zero formal charge %d", a.ID, a.FormalCharge)
+		}
+	}
+	// Must have a C=O double bond (carbonyl)
+	hasDouble := false
+	for _, b := range ls.Bonds {
+		if b.Order == 2 {
+			hasDouble = true
+			break
+		}
+	}
+	if !hasDouble {
+		t.Error("expected a C=O double bond (carbonyl), but found none")
+	}
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // findAtom returns the first atom in ls with the given element symbol, or nil.
