@@ -20,6 +20,17 @@ func isSMILES(s string) bool {
 // mis-formatted formula (e.g. "NO33-" parsed as N at charge −32).
 const maxChargeMagnitude = 8
 
+// GET /api/structure/random
+// Returns a randomly generated symmetric AB_n Lewis structure.
+func HandleRandomStructure(w http.ResponseWriter, r *http.Request) {
+	ls, err := structure.GenerateRandom()
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ls)
+}
+
 // POST /api/structure/lewis
 // Body: { "input": "H2O" }
 //    or { "input": "NO3", "charge": -1 }

@@ -47,6 +47,7 @@ func NewRouter() http.Handler {
 		// Structure & Bonding
 		r.Route("/structure", func(r chi.Router) {
 			r.Post("/lewis", HandleLewis)
+			r.Get("/random", HandleRandomStructure)
 		})
 	})
 
