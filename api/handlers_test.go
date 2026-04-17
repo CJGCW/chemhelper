@@ -753,3 +753,119 @@ func TestHandleCompoundLookup(t *testing.T) {
 		assertStatus(t, resp, http.StatusBadRequest)
 	})
 }
+
+// ── Compound resolve handler ──────────────────────────────────────────────────
+// These tests make real PubChem network calls.
+// Run with: go test ./api/... -v -run TestHandleCompoundResolve -timeout 60s
+
+func TestHandleCompoundResolve(t *testing.T) {
+	srv := newServer(t)
+
+	t.Run("caffeine SMILES returns correct formula and CID", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/resolve",
+			`{"smiles":"Cn1cnc2c1c(=O)n(c(=O)n2C)C"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r api.CompoundResponse
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "C8H10N4O2" {
+			t.Errorf("formula: got %q, want C8H10N4O2", r.MolecularFormula)
+		}
+		if r.CID != 2519 {
+			t.Errorf("CID: got %d, want 2519 (caffeine)", r.CID)
+		}
+		if r.MolecularWeight == "" {
+			t.Error("molecular_weight should not be empty")
+		}
+		if r.IUPACName == "" {
+			t.Error("iupac_name should not be empty")
+		}
+	})
+
+	t.Run("ethanol SMILES returns C2H6O", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/resolve", `{"smiles":"CCO"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r api.CompoundResponse
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "C2H6O" {
+			t.Errorf("formula: got %q, want C2H6O", r.MolecularFormula)
+		}
+		if r.CID != 702 {
+			t.Errorf("CID: got %d, want 702 (ethanol)", r.CID)
+		}
+	})
+
+	t.Run("water SMILES returns H2O", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/resolve", `{"smiles":"O"}`)
+		assertStatus(t, resp, http.StatusOK)
+
+		var r api.CompoundResponse
+		decodeJSON(t, resp, &r)
+
+		if r.MolecularFormula != "H2O" {
+			t.Errorf("formula: got %q, want H2O", r.MolecularFormula)
+		}
+	})
+
+	t.Run("empty smiles returns 400", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/resolve", `{"smiles":""}`)
+		assertStatus(t, resp, http.StatusBadRequest)
+	})
+
+	t.Run("invalid SMILES returns 422", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/resolve", `{"smiles":"ZZZZNOTSMILES"}`)
+		assertStatus(t, resp, http.StatusUnprocessableEntity)
+	})
+
+	t.Run("malformed JSON returns 400", func(t *testing.T) {
+		resp := postJSON(t, srv.URL+"/api/compound/resolve", `not json`)
+		assertStatus(t, resp, http.StatusBadRequest)
+	})
+}
+
+// ── Random structure handler ──────────────────────────────────────────────────
+
+func TestHandleRandomStructure(t *testing.T) {
+	srv := newServer(t)
+
+	t.Run("returns 200 with valid structure shape", func(t *testing.T) {
+		resp := getJSON(t, srv.URL+"/api/structure/random")
+		assertStatus(t, resp, http.StatusOK)
+
+		var r lewisResp
+		decodeJSON(t, resp, &r)
+
+		if r.Geometry == "" {
+			t.Error("geometry should not be empty")
+		}
+		if len(r.Atoms) == 0 {
+			t.Error("atoms should not be empty")
+		}
+		if len(r.Bonds) == 0 {
+			t.Error("bonds should not be empty")
+		}
+		if len(r.Steps) == 0 {
+			t.Error("steps should not be empty")
+		}
+	})
+
+	t.Run("successive calls return structures (not always identical)", func(t *testing.T) {
+		geometries := make(map[string]bool)
+		for i := 0; i < 10; i++ {
+			resp := getJSON(t, srv.URL+"/api/structure/random")
+			assertStatus(t, resp, http.StatusOK)
+			var r lewisResp
+			decodeJSON(t, resp, &r)
+			if r.Geometry == "" {
+				t.Fatalf("call %d: geometry should not be empty", i)
+			}
+			geometries[r.Geometry] = true
+		}
+		if len(geometries) < 2 {
+			t.Log("note: all 10 random structures had the same geometry — unlikely but possible")
+		}
+	})
+}
