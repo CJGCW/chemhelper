@@ -49,6 +49,22 @@ func NewRouter() http.Handler {
 			r.Post("/lewis", HandleLewis)
 			r.Get("/random", HandleRandomStructure)
 		})
+
+		// Organic Chemistry
+		r.Route("/organic", func(r chi.Router) {
+			r.Post("/name", HandleOrganicName)
+			r.Post("/validate-name", HandleOrganicValidateName)
+		})
+
+		// Spectral Analysis
+		r.Route("/spectral", func(r chi.Router) {
+			r.Post("/predict-ir", HandlePredictIR)
+			r.Post("/predict-hnmr", HandlePredictHNMR)
+			r.Post("/predict-cnmr", HandlePredictCNMR)
+			r.Post("/predict-ms", HandlePredictMS)
+			r.Post("/analyze", HandleSpectralAnalyze)
+			r.Post("/estimate", HandleSpectralEstimate)
+		})
 	})
 
 	return r
