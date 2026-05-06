@@ -48,6 +48,7 @@ func NewRouter() http.Handler {
 		r.Route("/structure", func(r chi.Router) {
 			r.Post("/lewis", HandleLewis)
 			r.Get("/random", HandleRandomStructure)
+			r.Post("/render", HandleStructureRender)
 		})
 
 		// Organic Chemistry
