@@ -348,9 +348,10 @@ func TestRenderLocalSMILES_Tetrahedral(t *testing.T) {
 	if !strings.Contains(svg, "LG") {
 		t.Error("missing LG label")
 	}
-	// C should be visible (local renderer shows all atoms)
-	if !strings.Contains(svg, "C") {
-		t.Error("missing C label")
+	// Central C with 4 substituents is a skeletal vertex — no ">C<" text in SVG
+	// ("C" still appears in "currentColor" attributes, so strings.Contains(svg, "C") is true)
+	if strings.Contains(svg, ">C<") {
+		t.Error("central C with 4 substituents should be skeletal vertex, not explicit label")
 	}
 }
 
@@ -399,5 +400,114 @@ func TestRender_CustomLabel(t *testing.T) {
 	}
 	if !strings.Contains(svg, "LG") {
 		t.Error("LG label not in SVG")
+	}
+}
+
+func TestImplicitHydrogens(t *testing.T) {
+	cases := []struct {
+		smiles string
+		want   []int // expected hCount per atom in parse order
+	}{
+		{"CC", []int{3, 3}},
+		{"CCC", []int{3, 2, 3}},
+		{"[R]C(C)C", []int{0, 1, 3, 3}},   // [R] bracketed→0, central CH, two CH₃
+		{"c1ccccc1", []int{1, 1, 1, 1, 1, 1}},
+		{"NCC(=O)O", []int{2, 2, 0, 0, 1}}, // N, CH₂, carbonyl C, =O, OH
+		{"CS", []int{3, 1}},
+		{"CN(C)C", []int{3, 0, 3, 3}},
+		{"C=C", []int{2, 2}},
+		{"C#C", []int{1, 1}},
+	}
+	for _, tc := range cases {
+		mol := parseSMILESLocal(tc.smiles)
+		if mol == nil {
+			t.Fatalf("parseSMILESLocal(%q) nil", tc.smiles)
+		}
+		computeImplicitH(mol)
+		if len(mol.atoms) != len(tc.want) {
+			t.Errorf("%s: got %d atoms, want %d", tc.smiles, len(mol.atoms), len(tc.want))
+			continue
+		}
+		for i, want := range tc.want {
+			if mol.atoms[i].hCount != want {
+				t.Errorf("%s atom[%d] (%s): hCount=%d, want %d",
+					tc.smiles, i, mol.atoms[i].symbol, mol.atoms[i].hCount, want)
+			}
+		}
+	}
+}
+
+func TestLabelRules(t *testing.T) {
+	sub := []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
+
+	// Non-terminal non-aromatic C with hCount=0: vertex
+	got := localAtomLabel(localAtom{symbol: "C", hCount: 0}, 3, sub)
+	if got != "" {
+		t.Errorf("interior C vertex: want \"\", got %q", got)
+	}
+
+	// Terminal C with hCount=3
+	got = localAtomLabel(localAtom{symbol: "C", hCount: 3}, 1, sub)
+	if got != "CH₃" {
+		t.Errorf("terminal CH₃: want \"CH₃\", got %q", got)
+	}
+
+	// Hydroxyl O (hCount=1)
+	got = localAtomLabel(localAtom{symbol: "O", hCount: 1}, 1, sub)
+	if got != "OH" {
+		t.Errorf("hydroxyl O: want \"OH\", got %q", got)
+	}
+
+	// Primary amine N (hCount=2)
+	got = localAtomLabel(localAtom{symbol: "N", hCount: 2}, 1, sub)
+	if got != "NH₂" {
+		t.Errorf("NH₂: want \"NH₂\", got %q", got)
+	}
+
+	// R placeholder
+	got = localAtomLabel(localAtom{symbol: "R", bracketed: true}, 0, sub)
+	if got != "R" {
+		t.Errorf("R placeholder: want \"R\", got %q", got)
+	}
+
+	// Aromatic C: vertex
+	got = localAtomLabel(localAtom{symbol: "C", aromatic: true, hCount: 1}, 2, sub)
+	if got != "" {
+		t.Errorf("aromatic C: want \"\", got %q", got)
+	}
+}
+
+func TestBranchedLayout(t *testing.T) {
+	cases := []struct {
+		name   string
+		smiles string
+	}{
+		{"valine", "[R]C(C)C"},
+		{"leucine", "[R]CC(C)C"},
+		{"isoleucine", "[R]C(C)CC"},
+		{"threonine", "[R]C(O)C"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mol := parseSMILESLocal(tc.smiles)
+			if mol == nil {
+				t.Fatal("parseSMILESLocal nil")
+			}
+			computeImplicitH(mol)
+			layoutMol(mol)
+			n := len(mol.atoms)
+			for i := 0; i < n-1; i++ {
+				for j := i + 1; j < n; j++ {
+					if bondedPair(mol, i, j) {
+						continue
+					}
+					d := dist2D(mol.atoms[i], mol.atoms[j])
+					if d < 0.7*localBondLen {
+						t.Errorf("atoms %d(%s) and %d(%s) are %.3f apart (< 0.7 BL)",
+							i, mol.atoms[i].symbol, j, mol.atoms[j].symbol, d)
+					}
+				}
+			}
+		})
 	}
 }

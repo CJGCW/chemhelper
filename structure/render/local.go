@@ -27,16 +27,19 @@ func needsLocalRenderer(smiles string) bool {
 // ── Local molecule types ──────────────────────────────────────────────────────
 
 type localAtom struct {
-	symbol string  // display label (e.g. "R", "Nu", "O", "Br")
-	charge int     // formal charge
-	hCount int     // explicit H count from bracket (for display, e.g. H3O+)
-	x, y   float64 // layout position in internal units
-	placed bool
+	symbol    string  // display label (e.g. "R", "Nu", "O", "Br")
+	charge    int     // formal charge
+	hCount    int     // explicit H count from bracket (for display, e.g. H3O+)
+	x, y      float64 // layout position in internal units
+	placed    bool
+	bracketed bool
+	aromatic  bool
 }
 
 type localBond struct {
-	a1, a2 int
-	order  int
+	a1, a2  int
+	order   int
+	aromatic bool
 }
 
 type localMol struct {
@@ -57,9 +60,9 @@ func parseSMILESLocal(smiles string) *localMol {
 	lastAtom := -1
 	nextBond := 1
 
-	addAtom := func(sym string, chg, hcnt int) int {
+	addAtom := func(sym string, chg, hcnt int, bracketed bool) int {
 		idx := len(atoms)
-		atoms = append(atoms, localAtom{symbol: sym, charge: chg, hCount: hcnt})
+		atoms = append(atoms, localAtom{symbol: sym, charge: chg, hCount: hcnt, bracketed: bracketed})
 		if lastAtom >= 0 {
 			bonds = append(bonds, localBond{a1: lastAtom, a2: idx, order: nextBond})
 		}
@@ -81,7 +84,7 @@ func parseSMILESLocal(smiles string) *localMol {
 				return nil
 			}
 			sym, chg, hcnt := parseBracket(smiles[i+1 : j])
-			addAtom(sym, chg, hcnt)
+			addAtom(sym, chg, hcnt, true)
 			i = j + 1
 
 		case c == '(':
@@ -122,11 +125,11 @@ func parseSMILESLocal(smiles string) *localMol {
 			i++
 
 		case c == 'C' && i+1 < len(smiles) && smiles[i+1] == 'l':
-			addAtom("Cl", 0, 0)
+			addAtom("Cl", 0, 0, false)
 			i += 2
 
 		case c == 'B' && i+1 < len(smiles) && smiles[i+1] == 'r':
-			addAtom("Br", 0, 0)
+			addAtom("Br", 0, 0, false)
 			i += 2
 
 		case isUpperLetter(c):
@@ -135,15 +138,23 @@ func parseSMILESLocal(smiles string) *localMol {
 				sym += string(smiles[i+1])
 				i++
 			}
-			addAtom(sym, 0, 0)
+			addAtom(sym, 0, 0, false)
 			i++
 
 		case isLowerLetter(c): // aromatic atom
-			addAtom(strings.ToUpper(string(c)), 0, 0)
+			idx := addAtom(strings.ToUpper(string(c)), 0, 0, false)
+			atoms[idx].aromatic = true
 			i++
 
 		default:
 			i++
+		}
+	}
+
+	// Post-process: mark aromatic bonds
+	for i := range bonds {
+		if atoms[bonds[i].a1].aromatic && atoms[bonds[i].a2].aromatic {
+			bonds[i].aromatic = true
 		}
 	}
 
@@ -245,78 +256,53 @@ func parseBracket(inner string) (sym string, charge, hCount int) {
 func isUpperLetter(c byte) bool { return c >= 'A' && c <= 'Z' }
 func isLowerLetter(c byte) bool { return c >= 'a' && c <= 'z' }
 
+// ── Implicit hydrogen computation ─────────────────────────────────────────────
+
+var organicTargetValence = map[string]int{
+	"C": 4, "N": 3, "O": 2, "S": 2, "P": 3,
+	"F": 1, "Cl": 1, "Br": 1, "I": 1,
+}
+
+func isPlaceholder(sym string) bool {
+	switch sym {
+	case "R", "Nu", "LG", "X", "E":
+		return true
+	}
+	return false
+}
+
+func computeImplicitH(mol *localMol) {
+	for i := range mol.atoms {
+		a := &mol.atoms[i]
+		if a.bracketed {
+			continue
+		}
+		targetVal, ok := organicTargetValence[a.symbol]
+		if !ok {
+			continue
+		}
+		var bondSum float64
+		for _, b := range mol.bonds {
+			if b.a1 != i && b.a2 != i {
+				continue
+			}
+			if b.aromatic {
+				bondSum += 1.5
+			} else {
+				bondSum += float64(b.order)
+			}
+		}
+		h := targetVal - int(math.Round(bondSum))
+		if h < 0 {
+			h = 0
+		}
+		a.hCount = h
+	}
+}
+
 // ── 2D Layout ─────────────────────────────────────────────────────────────────
 
 const localBondLen = 1.0
-
-// layoutMol assigns x,y coordinates to each atom using a DFS layout.
-// Bond angles use standard organic chemistry conventions:
-// chain → 60° zigzag, branches distribute evenly around the "forward" direction.
-func layoutMol(mol *localMol) {
-	n := len(mol.atoms)
-	if n == 0 {
-		return
-	}
-	mol.atoms[0].x = 0
-	mol.atoms[0].y = 0
-	mol.atoms[0].placed = true
-
-	if n == 1 {
-		return
-	}
-
-	var dfs func(atomIdx, parentIdx int, fromAngle float64)
-	dfs = func(atomIdx, parentIdx int, fromAngle float64) {
-		var toPlace []int
-		for _, nb := range mol.adj[atomIdx] {
-			if !mol.atoms[nb].placed {
-				toPlace = append(toPlace, nb)
-			}
-		}
-		if len(toPlace) == 0 {
-			return
-		}
-
-		forward := fromAngle + math.Pi
-		// Normalise to [0, 2π)
-		for forward < 0 {
-			forward += 2 * math.Pi
-		}
-		forward = math.Mod(forward, 2*math.Pi)
-
-		angles := distributeAngles(len(toPlace), forward)
-
-		a := &mol.atoms[atomIdx]
-		for i, nb := range toPlace {
-			angle := angles[i]
-			b := &mol.atoms[nb]
-			b.x = a.x + localBondLen*math.Cos(angle)
-			b.y = a.y + localBondLen*math.Sin(angle)
-			b.placed = true
-			dfs(nb, atomIdx, angle)
-		}
-	}
-
-	degree := len(mol.adj[0])
-	if degree == 0 {
-		return
-	}
-
-	// For root, start with first bond going right (0°)
-	rootAngles := distributeAnglesRoot(degree)
-	a0 := &mol.atoms[0]
-	for i, nb := range mol.adj[0] {
-		if mol.atoms[nb].placed {
-			continue
-		}
-		angle := rootAngles[i]
-		b := &mol.atoms[nb]
-		b.x = a0.x + localBondLen*math.Cos(angle)
-		b.y = a0.y + localBondLen*math.Sin(angle)
-		b.placed = true
-		dfs(nb, 0, angle)
-	}
-}
 
 // distributeAnglesRoot gives angles for bonds from the root atom (no parent).
 func distributeAnglesRoot(n int) []float64 {
@@ -364,9 +350,215 @@ func distributeAngles(n int, forward float64) []float64 {
 	}
 }
 
+// ── Collision avoidance helpers ───────────────────────────────────────────────
+
+type pos2D struct{ x, y float64 }
+
+func dist2D(a, b localAtom) float64 {
+	dx, dy := a.x-b.x, a.y-b.y
+	return math.Sqrt(dx*dx + dy*dy)
+}
+
+func bondedPair(mol *localMol, i, j int) bool {
+	for _, b := range mol.bonds {
+		if (b.a1 == i && b.a2 == j) || (b.a1 == j && b.a2 == i) {
+			return true
+		}
+	}
+	return false
+}
+
+func subtreeAtoms(mol *localMol, root, excludeParent int) []int {
+	result := []int{root}
+	visited := map[int]bool{root: true, excludeParent: true}
+	queue := []int{root}
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		for _, nb := range mol.adj[curr] {
+			if !visited[nb] {
+				visited[nb] = true
+				result = append(result, nb)
+				queue = append(queue, nb)
+			}
+		}
+	}
+	return result
+}
+
+func savePositions(mol *localMol, indices []int) []pos2D {
+	saved := make([]pos2D, len(indices))
+	for k, i := range indices {
+		saved[k] = pos2D{mol.atoms[i].x, mol.atoms[i].y}
+	}
+	return saved
+}
+
+func restorePositions(mol *localMol, indices []int, saved []pos2D) {
+	for k, i := range indices {
+		mol.atoms[i].x = saved[k].x
+		mol.atoms[i].y = saved[k].y
+	}
+}
+
+func rotateBranchAround(mol *localMol, indices []int, pivot localAtom, angle float64) {
+	c, s := math.Cos(angle), math.Sin(angle)
+	for _, i := range indices {
+		a := &mol.atoms[i]
+		dx := a.x - pivot.x
+		dy := a.y - pivot.y
+		a.x = pivot.x + dx*c - dy*s
+		a.y = pivot.y + dx*s + dy*c
+	}
+}
+
+func countCollisions(mol *localMol, minDist float64) int {
+	count := 0
+	n := len(mol.atoms)
+	for i := 0; i < n-1; i++ {
+		for j := i + 1; j < n; j++ {
+			if bondedPair(mol, i, j) {
+				continue
+			}
+			if dist2D(mol.atoms[i], mol.atoms[j]) < minDist {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func avoidCollisions(mol *localMol, parents []int) {
+	const minDist = 0.7 * localBondLen
+	tryAngles := []float64{
+		2 * math.Pi / 3, -2 * math.Pi / 3,
+		math.Pi / 3, -math.Pi / 3,
+		math.Pi,
+	}
+	for range [5]struct{}{} {
+		anyFixed := false
+		for j := 1; j < len(mol.atoms); j++ {
+			pj := parents[j]
+			if pj < 0 {
+				continue
+			}
+			for i := 0; i < len(mol.atoms); i++ {
+				if i == j || bondedPair(mol, i, j) {
+					continue
+				}
+				if dist2D(mol.atoms[i], mol.atoms[j]) >= minDist {
+					continue
+				}
+				sub := subtreeAtoms(mol, j, pj)
+				pivot := mol.atoms[pj]
+				saved := savePositions(mol, sub)
+				before := countCollisions(mol, minDist)
+				best := before
+				var bestA float64
+				hasBest := false
+				for _, a := range tryAngles {
+					rotateBranchAround(mol, sub, pivot, a)
+					score := countCollisions(mol, minDist)
+					if score < best {
+						best = score
+						bestA = a
+						hasBest = true
+					}
+					restorePositions(mol, sub, saved)
+				}
+				if hasBest {
+					rotateBranchAround(mol, sub, pivot, bestA)
+					anyFixed = true
+				}
+			}
+		}
+		if !anyFixed {
+			break
+		}
+	}
+}
+
+// layoutMol assigns x,y coordinates to each atom using a DFS layout.
+// Bond angles use standard organic chemistry conventions:
+// chain → 60° zigzag, branches distribute evenly around the "forward" direction.
+func layoutMol(mol *localMol) {
+	n := len(mol.atoms)
+	if n == 0 {
+		return
+	}
+	mol.atoms[0].x = 0
+	mol.atoms[0].y = 0
+	mol.atoms[0].placed = true
+
+	if n == 1 {
+		return
+	}
+
+	parents := make([]int, n)
+	for i := range parents {
+		parents[i] = -1
+	}
+
+	var dfs func(atomIdx, parentIdx int, fromAngle float64)
+	dfs = func(atomIdx, parentIdx int, fromAngle float64) {
+		var toPlace []int
+		for _, nb := range mol.adj[atomIdx] {
+			if !mol.atoms[nb].placed {
+				toPlace = append(toPlace, nb)
+			}
+		}
+		if len(toPlace) == 0 {
+			return
+		}
+
+		forward := fromAngle + math.Pi
+		// Normalise to [0, 2π)
+		for forward < 0 {
+			forward += 2 * math.Pi
+		}
+		forward = math.Mod(forward, 2*math.Pi)
+
+		angles := distributeAngles(len(toPlace), forward)
+
+		a := &mol.atoms[atomIdx]
+		for i, nb := range toPlace {
+			parents[nb] = atomIdx
+			angle := angles[i]
+			b := &mol.atoms[nb]
+			b.x = a.x + localBondLen*math.Cos(angle)
+			b.y = a.y + localBondLen*math.Sin(angle)
+			b.placed = true
+			dfs(nb, atomIdx, angle)
+		}
+	}
+
+	degree := len(mol.adj[0])
+	if degree == 0 {
+		return
+	}
+
+	// For root, start with first bond going right (0°)
+	rootAngles := distributeAnglesRoot(degree)
+	a0 := &mol.atoms[0]
+	for i, nb := range mol.adj[0] {
+		if mol.atoms[nb].placed {
+			continue
+		}
+		parents[nb] = 0
+		angle := rootAngles[i]
+		b := &mol.atoms[nb]
+		b.x = a0.x + localBondLen*math.Cos(angle)
+		b.y = a0.y + localBondLen*math.Sin(angle)
+		b.placed = true
+		dfs(nb, 0, angle)
+	}
+
+	avoidCollisions(mol, parents)
+}
+
 // ── SVG generation ────────────────────────────────────────────────────────────
 
-const localSVGPad = 22.0
+const localSVGPad = 10.0
 
 // renderLocalSMILES renders a custom-label SMILES to SVG.
 func renderLocalSMILES(smiles string, width, height int, showLonePairs bool) (string, error) {
@@ -374,6 +566,7 @@ func renderLocalSMILES(smiles string, width, height int, showLonePairs bool) (st
 	if mol == nil || len(mol.atoms) == 0 {
 		return renderLabelFallback(smiles, width, height), nil
 	}
+	computeImplicitH(mol)
 	layoutMol(mol)
 	return localToSVG(mol, width, height, showLonePairs), nil
 }
@@ -446,6 +639,8 @@ func localToSVG(mol *localMol, width, height int, showLonePairs bool) string {
 	labelRadius := fontSize * 0.65
 	bondSepLocal := math.Max(1.5, math.Min(3.5, scale*0.07))
 
+	subscripts := []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
+
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(
 		`<svg width="%d" height="%d" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d">`,
@@ -461,11 +656,14 @@ func localToSVG(mol *localMol, width, height int, showLonePairs bool) string {
 		a1 := &mol.atoms[b.a1]
 		a2 := &mol.atoms[b.a2]
 
+		hn1 := len(mol.adj[b.a1])
+		hn2 := len(mol.adj[b.a2])
+
 		x1, y1 := toSX(a1.x), toSY(a1.y)
 		x2, y2 := toSX(a2.x), toSY(a2.y)
 
-		r1 := localLabelRadius(a1.symbol, a1.charge, a1.hCount, labelRadius)
-		r2 := localLabelRadius(a2.symbol, a2.charge, a2.hCount, labelRadius)
+		r1 := localLabelRadius(*a1, hn1, labelRadius)
+		r2 := localLabelRadius(*a2, hn2, labelRadius)
 		x1, y1, x2, y2 = shorten(x1, y1, x2, y2, r1, r2)
 
 		switch b.order {
@@ -481,13 +679,15 @@ func localToSVG(mol *localMol, width, height int, showLonePairs bool) string {
 		}
 	}
 
-	// Draw atom labels (always visible in local mode — no skeletal suppression)
-	subscripts := []string{"₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"}
-	for _, a := range mol.atoms {
-		label := localAtomLabel(a, subscripts)
+	// Draw atom labels (skeletal-aware: interior C and aromatic C rendered as vertices)
+	for i, a := range mol.atoms {
+		hn := len(mol.adj[i])
+		label := localAtomLabel(a, hn, subscripts)
+		if label == "" {
+			continue // skeletal vertex: no text needed
+		}
 		sx, sy := toSX(a.x), toSY(a.y)
 
-		// White knockout for readability
 		sb.WriteString(fmt.Sprintf(
 			`<text x="%.2f" y="%.2f" text-anchor="middle" dominant-baseline="central" `+
 				`fill="currentColor" stroke="none" font-family="sans-serif" font-size="%.1f" font-weight="600">%s</text>`,
@@ -505,47 +705,66 @@ func localToSVG(mol *localMol, width, height int, showLonePairs bool) string {
 }
 
 // localLabelRadius returns the radius to shorten bonds at this atom.
-func localLabelRadius(sym string, charge, hCount int, base float64) float64 {
-	lbl := localAtomLabel(localAtom{symbol: sym, charge: charge, hCount: hCount}, nil)
+func localLabelRadius(a localAtom, heavyNeighborCount int, base float64) float64 {
+	lbl := localAtomLabel(a, heavyNeighborCount, nil)
 	if len(lbl) == 0 {
 		return 0
 	}
-	// Rough: base radius + extra for multi-char labels
 	extra := float64(len([]rune(lbl))-1) * base * 0.4
 	return base + extra
 }
 
-// localAtomLabel constructs the display label for an atom.
-func localAtomLabel(a localAtom, subscripts []string) string {
-	label := a.symbol
-	if a.hCount > 0 {
-		if subscripts != nil && a.hCount < len(subscripts) {
-			label += "H" + subscripts[a.hCount]
-		} else if a.hCount == 1 {
-			label += "H"
-		} else {
-			label += fmt.Sprintf("H%d", a.hCount)
-		}
+// hLabel returns the hydrogen suffix string for a label.
+func hLabel(hCount int, subscripts []string) string {
+	if hCount <= 0 {
+		return ""
 	}
-	if a.charge != 0 {
-		switch a.charge {
-		case 1:
-			label += "⁺"
-		case -1:
-			label += "⁻"
-		case 2:
-			label += "²⁺"
-		case -2:
-			label += "²⁻"
-		default:
-			if a.charge > 0 {
-				label += fmt.Sprintf("%d+", a.charge)
-			} else {
-				label += fmt.Sprintf("%d-", -a.charge)
-			}
-		}
+	if hCount == 1 {
+		return "H"
 	}
-	return label
+	if subscripts != nil && hCount < len(subscripts) {
+		return "H" + subscripts[hCount]
+	}
+	return fmt.Sprintf("H%d", hCount)
+}
+
+// chargeLabel returns the superscript charge string.
+func chargeLabel(charge int) string {
+	switch charge {
+	case 0:
+		return ""
+	case 1:
+		return "⁺"
+	case -1:
+		return "⁻"
+	case 2:
+		return "²⁺"
+	case -2:
+		return "²⁻"
+	default:
+		if charge > 0 {
+			return fmt.Sprintf("%d+", charge)
+		}
+		return fmt.Sprintf("%d-", -charge)
+	}
+}
+
+// localAtomLabel constructs the skeletal-aware display label for an atom.
+func localAtomLabel(a localAtom, heavyNeighborCount int, subscripts []string) string {
+	sym := a.symbol
+	if isPlaceholder(sym) {
+		return sym + hLabel(a.hCount, subscripts) + chargeLabel(a.charge)
+	}
+	if a.aromatic && sym == "C" {
+		return "" // aromatic carbon: skeletal vertex
+	}
+	if sym == "C" {
+		if a.hCount == 0 && heavyNeighborCount >= 2 {
+			return chargeLabel(a.charge) // interior quaternary C: vertex (just charge if charged)
+		}
+		return "C" + hLabel(a.hCount, subscripts) + chargeLabel(a.charge)
+	}
+	return sym + hLabel(a.hCount, subscripts) + chargeLabel(a.charge)
 }
 
 // ── Lone pair rendering ───────────────────────────────────────────────────────
